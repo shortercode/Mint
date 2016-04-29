@@ -56,6 +56,7 @@ class Vector {
 class Canvas {
 	constructor () {
 		this.element = document.createElement('canvas');
+		this.element.className = 'canvas';
 		this.context = this.element.getContext('2d');
 		this.mouse = new Vector();
 		this.selectedLayer = null;
@@ -66,6 +67,7 @@ class Canvas {
 			this.clear();
 			for (let layer of this.layers)
 				layer.visible && layer.draw(this);
+			this.callEvent('draw');
 		}
 		
 		const MOUSE_MOVE = e => {
@@ -80,7 +82,7 @@ class Canvas {
 		
 		const MOUSE_UP = e => {
 			if (this.selectedLayer) {
-				this.selectedLayer.onmousedown(this.mouse);
+				this.selectedLayer.onmouseup(this.mouse);
 			} else {
 				for (let layer of this.layers) {
 					if (layer.visible && layer.inside(this.mouse)) {
@@ -95,12 +97,22 @@ class Canvas {
 		this.element.addEventListener('mousedown', MOUSE_DOWN);
 		this.element.addEventListener('mousemove', MOUSE_MOVE);
 		this.element.addEventListener('mouseup', MOUSE_UP);
+		
+		this.eventMap = new Map();
+	}
+	callEvent (eName, eObj) {
+		if (this.eventMap.has(eName))
+			this.eventMap.get(eName)(eObj);
+	}
+	on (eName, fn) {
+		this.eventMap.set(eName, fn);
 	}
 	selectLayer (L) {
 		if (this.selectedLayer)
 			this.deselectLayer();
 		this.selectedLayer = L;
 		L.select();
+		this.callEvent('select', L);
 	}
 	deselectLayer (L) {
 		L = L || this.selectedLayer;
@@ -109,15 +121,18 @@ class Canvas {
 			this.selectedLayer = null;
 			L.deselect();
 		}
+		this.callEvent('deselect', L);
 	}
 	addLayer (L) {
 		this.layers.push(L);
+		this.callEvent('add', L);
 	}
 	removeLayer (L) {
 		const i = this.layes.indexOf(L);
 		this.layers.splice(i, 1);
 		if (L === this.selectedLayer)
 			this.deselectLayer();
+		this.callEvent('remove', L);
 	}
 	clear () {
 		this.context.clearRect(0, 0, this.width, this.height);
@@ -149,7 +164,8 @@ class Canvas {
 		return this;
 	}
 	image (img, {x, y}, D) {
-		this.context.drawImage(img, x, y, D.x, D.y);
+		if (img && img.naturalWidth) // check if image and loaded
+			this.context.drawImage(img, x, y, D.x, D.y);
 		return this;
 	}
 	set width (v) {
@@ -172,6 +188,51 @@ class Canvas {
  *	#
  * 	#######
  */
+ 
+class Controller {
+	constructor (canvas) {
+		this.canvas = canvas;
+		this.element = document.createElement('div');
+		this.element.className = 'controller';
+		this.selectedChild = null;
+		
+		this.layerMap = new Map();
+		
+		canvas.on('add', e => this.addChild(e));
+		canvas.on('remove', e => this.removeChild(e));
+		canvas.on('select', e => this.selectChild(e));
+		canvas.on('deselect', e => this.deselectChild(e));
+	}
+	get children () {
+		return this.element.children;
+	}
+	addChild (L) {
+		const node = document.createElement('div');
+		node.textContent = L.constructor.name;
+		this.element.appendChild(node);
+		this.layerMap.set(L, node);
+	}
+	removeChild (L) {
+		const node = this.layerMap.get(L);
+		this.layerMap.delete(L);
+		this.element.removeChild(node);
+	}
+	selectChild (L) {
+		const node = this.layerMap.get(L);
+		node.classList.add('selected');
+	}
+	deselectChild (L) {
+		const node = this.layerMap.get(L);
+		node.classList.remove('selected');
+	}
+	
+	newImage (src, p, s) {
+		const IMG = new ImageLayer();
+		IMG.setImage(src);
+		IMG.position.set(p);
+		IMG.size.set(s);
+	}
+}
 class Layer {
 	constructor () {
 		this.visible = true;
@@ -188,9 +249,18 @@ class Layer {
 	deselect () {
 		
 	}
+	onmousedown () {
+		
+	}
+	onmouseup () {
+		
+	}
+	onmousemove () {
+		
+	}
 }
 
-class Polygon extends Layer {
+class PolygonLayer extends Layer {
 	constructor () {
 		super();
 		this.points = [];
@@ -208,7 +278,7 @@ class Polygon extends Layer {
 	}
 }
 
-class Polyline extends Layer {
+class PolylineLayer extends Layer {
 	constructor () {
 		super();
 		this.points = [];
@@ -232,24 +302,28 @@ class Polyline extends Layer {
 	}
 }
 
-class Image extends Layer {
-	constructor (image) {
+class ImageLayer extends Layer {
+	constructor () {
 		super();
 		this.position = new Vector();
 		this.size = new Vector();
-		this.image = 
+		this.image = null;
+	}
+	setImage (src) {
+		this.image = new Image();
+		this.image.src = src;
 	}
 	inside (V) {
 		return Collision.pointInBox(V, this.position, this.size);
 	}
 	draw (C) {
-		C.image
+		C.image(this.image, this.position, this.size);
 	}
 }
 
 class Collision {
 	constructor () {
-		
+		throw new Error("Collision is not instantiable");
 	}
 	static pointInPolygon ({x, y}, polygon) {
 	    let inside = false;
